@@ -1,0 +1,5 @@
+Do not choose yet. Make the choice a measured one and keep the design from forcing it.
+
+Put checkpoint commit (rename over existing, fsync, locking) behind one small interface with a conformance test. Known facts: WSL2 uses NAT by default, so a service inside it is not reachable from the LAN without mirrored networking or port forwarding; the Windows drive mounted inside WSL is slow. Assumptions, not yet verified on this desktop: that mirrored networking works cleanly there, and that NTFS rename semantics satisfy the conformance test.
+
+Decision rule: on the desktop, run the same test suite twice, once under native Windows Python and once inside WSL2. The suite includes killing the coordinator mid-checkpoint and confirming no partial checkpoint is ever loaded, plus a reachability check from the Mac. Pick the host that passes with the least special handling and record the result as measured. If both pass, prefer native Windows, because it removes the NAT layer and the dependency on the WSL virtual machine being up. If only one passes, that settles it. Nothing here needs remote access: the tests are run at the desktop.

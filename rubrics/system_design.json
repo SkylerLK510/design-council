@@ -1,0 +1,93 @@
+{
+  "name": "system_design",
+  "note": "Weights and thresholds are starting points. Calibrate them by replaying past decisions whose outcome you know, then adjust with `rescore` (no new judge calls).",
+  "dimensions": [
+    {
+      "id": "constraint_fit",
+      "weight": 0.25,
+      "instructions": "How well does `proposal` satisfy the hard constraints and goals stated in `decision_brief`?",
+      "levels": [
+        "Ignores or contradicts one or more constraints stated in the brief",
+        "Addresses the goal but leaves at least one stated constraint unaddressed",
+        "Addresses every stated constraint, some only by assertion without showing how",
+        "Addresses every stated constraint and shows how each one is met"
+      ]
+    },
+    {
+      "id": "failure_handling",
+      "weight": 0.2,
+      "instructions": "How does `proposal` deal with things going wrong, such as crashes, partial writes, lost messages or bad input?",
+      "levels": [
+        "Does not mention failure at all",
+        "Mentions failure in general terms without saying what the system does",
+        "Names specific failure cases and what the system does in each",
+        "Names specific failure cases, what the system does in each, and how that behaviour would be tested"
+      ]
+    },
+    {
+      "id": "verifiability",
+      "weight": 0.2,
+      "instructions": "How checkable is `proposal`: could someone tell from a test or a measurement whether it worked?",
+      "levels": [
+        "States no way to check whether it worked",
+        "Says it should be tested but gives no concrete check",
+        "Gives at least one concrete check with an observable outcome",
+        "Gives concrete pass or fail criteria for its main claims, including at least one failure test"
+      ]
+    },
+    {
+      "id": "simplicity",
+      "weight": 0.15,
+      "instructions": "How simple is the approach in `proposal` relative to what `decision_brief` actually needs?",
+      "levels": [
+        "Introduces several components or concepts that the stated goal does not require",
+        "Introduces one significant component or concept that the stated goal does not require",
+        "Uses only what the goal requires, but leaves the moving parts implicit",
+        "Uses only what the goal requires and names each moving part and why it is needed"
+      ]
+    },
+    {
+      "id": "reversibility",
+      "weight": 0.1,
+      "instructions": "How costly would it be to back out of `proposal` if it turns out to be wrong?",
+      "levels": [
+        "Commits to a choice that would require rewriting most of the system to undo",
+        "Undoing it would require significant rework in more than one component",
+        "Undoing it is confined to one component or one interface",
+        "Explicitly keeps the alternative open, for example behind an interface or a measured decision rule"
+      ]
+    },
+    {
+      "id": "evidence",
+      "weight": 0.1,
+      "instructions": "How well does `proposal` separate what is known from what is assumed?",
+      "levels": [
+        "Presents assumptions as established facts",
+        "Mixes verified facts and assumptions without saying which is which",
+        "Labels its main assumptions as assumptions",
+        "Labels assumptions, cites or measures the facts it relies on, and says what would change its conclusion"
+      ]
+    }
+  ],
+  "vetoes": [
+    {
+      "id": "violates_hard_constraint",
+      "threshold": 0.7,
+      "instructions": "Does `proposal` depend on something that `decision_brief` explicitly rules out or says is unavailable?",
+      "criteria": {
+        "true": "The proposal needs an action, tool, access or condition the brief explicitly forbids or says does not exist yet",
+        "false": "Nothing the proposal needs conflicts with an explicit prohibition or stated unavailability in the brief"
+      }
+    },
+    {
+      "id": "answers_a_different_question",
+      "threshold": 0.7,
+      "instructions": "Does `proposal` answer a different question from the one `decision_brief` asks?",
+      "criteria": {
+        "true": "The proposal's main recommendation is about something other than the decision the brief asks for",
+        "false": "The proposal's main recommendation is a direct answer to the decision the brief asks for"
+      }
+    }
+  ],
+  "decision": { "min_confidence": 0.5, "min_margin": 0.05 }
+}
