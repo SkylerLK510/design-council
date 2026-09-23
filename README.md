@@ -15,6 +15,9 @@ python3 council.py show-request --brief examples/coordinator-host/brief.md --pro
 # judge with TypeSafe (needs TYPESAFE_API_KEY in the environment)
 python3 council.py judge --brief BRIEF.md --proposals a.md b.md c.md --out run.report.json
 
+# pin a model version instead of the moving jev-latest alias
+python3 council.py judge --typesafe-model jev-1.13.0 --brief BRIEF.md --proposals a.md b.md c.md
+
 # offline judge: a local Ollama model, nothing leaves the machine
 python3 council.py judge --judge ollama --brief BRIEF.md --proposals a.md b.md c.md
 
@@ -31,11 +34,14 @@ Exit code 0 means *recommend*, 1 means *escalate*, 2 means the judge could not s
 3. Each `Score` is normalised to 0..1 and combined with the rubric weights. A `Noul` veto at or above its threshold removes a proposal regardless of its score.
 4. The leader is recommended only if it beats the runner-up by `min_margin`, the judge's lowest confidence on it is at least `min_confidence`, and every proposal was judged. Otherwise the council escalates and lists the reasons.
 
+The report header names the model version that answered and the input tokens used. `jev-latest` is an alias that moves when TypeSafe ships a release, so once `min_confidence` and the veto thresholds have been tuned against real decisions, pin that version with `--typesafe-model` and move on your own schedule.
+
 `rubrics/system_design.json` scores constraint fit, failure handling, verifiability, simplicity, reversibility and evidence, and vetoes proposals that depend on something the brief rules out or that answer a different question. Its weights and thresholds are starting points, not findings.
 
 ## What is and is not validated
 
-- 21 offline tests: request shape against the documented API contract, retry on 429/529, no retry on 401/422, the API key never appearing in errors, vetoes, margin and confidence gates, judge failures, and `rescore` making no judge call.
+- 24 offline tests: request shape against the documented API contract, retry on 429/529 (honouring a numeric `Retry-After`), no retry on 401/422, the API key never appearing in errors, model pinning, vetoes, margin and confidence gates, judge failures, and `rescore` making no judge call.
+- Request and response shapes were rechecked against the live docs on 2026-09-23 (`jev-latest` pointed to `jev-1.13.0`).
 - The worked example was run end to end with the **offline Ollama judge** (`qwen2.5:7b`). It vetoed the proposal that depends on SSH, which the brief forbids, and recommended the measured-decision proposal, identically under two shuffles.
 - **The TypeSafe judge has not been run against the live API.** No key was available. Its request and error handling are tested against the documented contract only.
 - That example proves plumbing, not taste: one author wrote the rubric and all three proposals. The same run also vetoed the SSH proposal for "answering a different question", which is a false positive.
@@ -46,4 +52,5 @@ Exit code 0 means *recommend*, 1 means *escalate*, 2 means the judge could not s
 - Text only. It can judge written designs, not diagrams or mockups.
 - One judge is one opinion, however many times it is asked. Diversity has to come from the proposals and the rubric. A second judge seat is a natural next step.
 - A proposal can reveal its author in its own text. Anonymisation covers file names only.
+- A proposal can argue for itself ("this design meets every constraint"). TypeSafe lists adversarial or self-describing content among Jev 1.13's known weak spots, so the rubric scores what a proposal shows, not what it claims, and a persuasive proposal still deserves a human read.
 - With the TypeSafe judge, the brief and every proposal are sent to a third-party API. Use `show-request` first, and do not put anything in a brief that you would not send.

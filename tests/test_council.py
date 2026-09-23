@@ -50,8 +50,8 @@ class Response(io.BytesIO):
         return False
 
 
-def http_error(code):
-    return urllib.error.HTTPError('u', code, 'x', {}, io.BytesIO(b'{}'))
+def http_error(code, headers=None):
+    return urllib.error.HTTPError('u', code, 'x', headers or {}, io.BytesIO(b'{}'))
 
 
 class RubricTests(unittest.TestCase):
@@ -193,6 +193,20 @@ class TypeSafeJudgeTests(unittest.TestCase):
         c.TypeSafeJudge(api_key='k', opener=opener, sleep=naps.append).judge('b', 'p', rubric())
         self.assertEqual(naps, [2, 4])
 
+    def test_honours_a_numeric_retry_after_and_ignores_a_date(self):
+        replies = [http_error(429, {'Retry-After': '7'}), http_error(429, {'Retry-After': '600'}),
+                   http_error(529, {'Retry-After': 'Wed, 23 Sep 2026 10:00:00 GMT'}), Response(self.OK)]
+        naps = []
+
+        def opener(request, timeout):
+            reply = replies.pop(0)
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
+
+        c.TypeSafeJudge(api_key='k', opener=opener, sleep=naps.append).judge('b', 'p', rubric())
+        self.assertEqual(naps, [7.0, 60.0, 8])
+
     def test_401_and_422_fail_at_once_and_never_leak_the_key(self):
         for code in (401, 422):
             calls = []
@@ -256,6 +270,19 @@ class CliTests(unittest.TestCase):
         text = out.getvalue()
         self.assertEqual(text.count('"model": "jev-latest"'), 3)
         self.assertIn('Remote access to the desktop is NOT configured', text)
+
+    def test_show_request_can_pin_a_model_version(self):
+        out = io.StringIO()
+        self.assertEqual(c.main(['show-request', '--typesafe-model', 'jev-1.13.0', *self.ARGS], out=out), 0)
+        self.assertEqual(out.getvalue().count('"model": "jev-1.13.0"'), 3)
+
+    def test_report_names_the_model_that_answered_and_the_tokens_used(self):
+        judged = [{'label': 'Proposal A', 'source': 'a.md', 'answers': flat(2), 'model': 'jev-1.13.0',
+                   'usage': {'input_tokens': 900, 'output_tokens': 40}},
+                  {'label': 'Proposal B', 'source': 'b.md', 'error': 'TypeSafe API returned HTTP 529'}]
+        head = c.render(c.build_report('brief', judged, rubric(), 'typesafe', 0)).splitlines()[0]
+        self.assertIn('model: jev-1.13.0', head)
+        self.assertIn('input tokens: 900', head)
 
     def test_judge_without_a_key_exits_2_and_says_why(self):
         err = io.StringIO()

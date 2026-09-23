@@ -41,6 +41,18 @@ class JudgeError(Exception):
     """The judge could not answer. Carries a message that is safe to store."""
 
 
+def retry_delay_s(headers, attempt):
+    """The server's numeric Retry-After when it sends one (capped at a minute),
+    otherwise exponential backoff. A date-valued or missing header falls back."""
+    try:
+        seconds = float((headers or {}).get('Retry-After'))
+    except (TypeError, ValueError):
+        seconds = float('nan')
+    if seconds >= 0:  # False for NaN
+        return min(seconds, 60.0)
+    return min(2 ** attempt, 30)
+
+
 # --- rubric -------------------------------------------------------------------------
 
 def load_rubric(path):
@@ -125,7 +137,7 @@ class TypeSafeJudge:
             except urllib.error.HTTPError as exc:
                 exc.close()
                 if exc.code in RETRYABLE and attempt < self.max_attempts:
-                    self.sleep(min(2 ** attempt, 30))
+                    self.sleep(retry_delay_s(exc.headers, attempt))
                     continue
                 raise JudgeError(f'TypeSafe API returned HTTP {exc.code}') from None
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
@@ -284,7 +296,11 @@ def rescore(report, rubric):
 
 def render(report):
     dims = [d['id'] for d in report['rubric']['dimensions']]
-    lines = [f"judge: {report['judge']}   seed: {report['seed']}", '']
+    # An alias such as jev-latest moves between releases; log the version that answered.
+    models = sorted({row['model'] for row in report['judged'] if row.get('model')})
+    tokens = sum((row.get('usage') or {}).get('input_tokens') or 0 for row in report['judged'])
+    head = f"judge: {report['judge']}   model: {', '.join(models) or 'n/a'}   seed: {report['seed']}"
+    lines = [head + (f'   input tokens: {tokens}' if tokens else ''), '']
     header = f"{'':12}{'total':>7} " + ' '.join(f'{d[:12]:>13}' for d in dims) + '   source'
     lines.append(header)
     for s in sorted(report['scored'], key=lambda s: s.get('total', -1), reverse=True):
@@ -315,6 +331,8 @@ def main(argv=None, out=None):
         p.add_argument('--proposals', nargs='+', required=True)
         p.add_argument('--rubric', default=str(DEFAULT_RUBRIC))
         p.add_argument('--seed', type=int, default=0)
+        p.add_argument('--typesafe-model', default=DEFAULT_MODEL,
+                       help='alias or version; pin a version such as jev-1.13.0 once thresholds are tuned')
         if name == 'judge':
             p.add_argument('--judge', choices=('typesafe', 'ollama'), default='typesafe')
             p.add_argument('--ollama-url', default='http://localhost:11434')
@@ -336,10 +354,11 @@ def main(argv=None, out=None):
     if args.command == 'show-request':
         for item in anonymised:
             print(f"# {item['label']}  <- {item['source']}", file=out)
-            print(json.dumps(build_request(brief, item['text'], rubric), indent=2), file=out)
+            print(json.dumps(build_request(brief, item['text'], rubric, args.typesafe_model), indent=2), file=out)
         return 0
     try:
-        judge = TypeSafeJudge() if args.judge == 'typesafe' else OllamaJudge(args.ollama_url, args.ollama_model)
+        judge = (TypeSafeJudge(model=args.typesafe_model) if args.judge == 'typesafe'
+                 else OllamaJudge(args.ollama_url, args.ollama_model))
     except JudgeError as exc:
         print(f'cannot start judge: {exc}', file=sys.stderr)
         return 2
