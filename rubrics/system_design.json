@@ -5,12 +5,12 @@
     {
       "id": "constraint_fit",
       "weight": 0.25,
-      "instructions": "How well does `proposal` satisfy the hard constraints and goals stated in `decision_brief`?",
+      "instructions": "How well does `proposal` meet the hard constraints listed in `decision_brief`? A constraint counts as addressed only if the proposal names it or states how the design meets it; complying silently does not count. Stating as fact something the brief says is unknown counts as contradicting that constraint.",
       "levels": [
-        "Ignores or contradicts one or more constraints stated in the brief",
-        "Addresses the goal but leaves at least one stated constraint unaddressed",
-        "Addresses every stated constraint, some only by assertion without showing how",
-        "Addresses every stated constraint and shows how each one is met"
+        "Contradicts one or more of the listed constraints",
+        "Leaves at least one listed constraint unaddressed",
+        "Addresses every listed constraint, but for some only asserts that they are met",
+        "Addresses every listed constraint and states how each one is met"
       ]
     },
     {
@@ -38,12 +38,11 @@
     {
       "id": "simplicity",
       "weight": 0.15,
-      "instructions": "How simple is the approach in `proposal` relative to what `decision_brief` actually needs?",
+      "instructions": "How much does `proposal` add that the decision in `decision_brief` does not need? A step that checks something `decision_brief` says is unknown or unverified counts as needed.",
       "levels": [
-        "Introduces several components or concepts that the stated goal does not require",
-        "Introduces one significant component or concept that the stated goal does not require",
-        "Uses only what the goal requires, but leaves the moving parts implicit",
-        "Uses only what the goal requires and names each moving part and why it is needed"
+        "Adds several components, services or steps that the decision does not need",
+        "Adds one significant component, service or step that the decision does not need",
+        "Adds nothing significant beyond what the decision needs"
       ]
     },
     {
@@ -80,12 +79,12 @@
       }
     },
     {
-      "id": "answers_a_different_question",
+      "id": "leaves_decision_unanswered",
       "threshold": 0.7,
-      "instructions": "Does `proposal` answer a different question from the one `decision_brief` asks?",
+      "instructions": "Does `proposal` leave the decision that `decision_brief` asks for unanswered?",
       "criteria": {
-        "true": "The proposal's main recommendation is about something other than the decision the brief asks for",
-        "false": "The proposal's main recommendation is a direct answer to the decision the brief asks for"
+        "true": "It recommends something about a different decision, or makes no recommendation about this one",
+        "false": "It answers this decision, either by picking an option or by giving a rule that says which option to pick once named facts are checked"
       }
     }
   ],

@@ -139,7 +139,7 @@ class DecisionTests(unittest.TestCase):
         self.assertIn('HTTP 529', json.dumps(report['scored']))
 
     def test_everything_vetoed_recommends_nothing(self):
-        d = self.run_council({'x': flat(3, vetoes={'answers_a_different_question': 0.9})})['decision']
+        d = self.run_council({'x': flat(3, vetoes={'leaves_decision_unanswered': 0.9})})['decision']
         self.assertEqual((d['action'], d['recommendation']), ('escalate', None))
 
     def test_missing_answer_is_an_error_not_a_zero(self):
@@ -158,6 +158,10 @@ class DecisionTests(unittest.TestCase):
         with mock.patch.object(c.TypeSafeJudge, 'judge', side_effect=AssertionError('no judge call allowed')):
             again = c.rescore(report, reweighted)
         self.assertEqual(again['decision']['recommended_source'], 'simple.md')
+        reworded = json.loads(json.dumps(reweighted))
+        reworded['dimensions'][0]['levels'][0] = 'a different level the judge never saw'
+        with self.assertRaisesRegex(ValueError, 'same questions'):
+            c.rescore(report, reworded)
         reweighted['dimensions'][0]['id'] = 'renamed'
         with self.assertRaises(ValueError):
             c.rescore(report, reweighted)
@@ -251,7 +255,7 @@ class OllamaJudgeTests(unittest.TestCase):
         picked['violates_hard_constraint'] = True
         out = c.OllamaJudge(opener=self.reply(picked)).judge('b', 'p', rubric())['answers']
         self.assertEqual((out['evidence']['score'], out['evidence']['confidence']), (2.0, None))
-        self.assertEqual((out['violates_hard_constraint']['noul'], out['answers_a_different_question']['noul']), (1.0, 0.0))
+        self.assertEqual((out['violates_hard_constraint']['noul'], out['leaves_decision_unanswered']['noul']), (1.0, 0.0))
 
     def test_out_of_range_level_is_an_error(self):
         picked = {d['id']: 99 for d in rubric()['dimensions']}
@@ -271,6 +275,15 @@ class CliTests(unittest.TestCase):
         self.assertEqual(text.count('"model": "jev-latest"'), 3)
         self.assertIn('Remote access to the desktop is NOT configured', text)
 
+    def test_a_glob_that_matches_the_brief_leaves_it_out(self):
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(c.sys, 'stderr', err):
+            self.assertEqual(c.main(['show-request', '--brief', str(EXAMPLE / 'brief.md'), '--proposals',
+                                     *map(str, sorted(EXAMPLE.glob('*.md')))], out=out), 0)
+        self.assertEqual(out.getvalue().count('"state"'), 3)
+        self.assertNotIn('<- brief.md', out.getvalue())
+        self.assertIn('left out of the proposals', err.getvalue())
+
     def test_show_request_can_pin_a_model_version(self):
         out = io.StringIO()
         self.assertEqual(c.main(['show-request', '--typesafe-model', 'jev-1.13.0', *self.ARGS], out=out), 0)
@@ -283,6 +296,16 @@ class CliTests(unittest.TestCase):
         head = c.render(c.build_report('brief', judged, rubric(), 'typesafe', 0)).splitlines()[0]
         self.assertIn('model: jev-1.13.0', head)
         self.assertIn('input tokens: 900', head)
+
+    def test_rescore_of_the_saved_live_run_needs_no_key_and_exits_like_judge(self):
+        saved = str(EXAMPLE / 'live-run.jev-1.13.0.json')
+        out = io.StringIO()
+        with mock.patch.dict(c.os.environ, {}, clear=True), \
+                mock.patch.object(c.urllib.request, 'urlopen', side_effect=AssertionError('no network allowed')):
+            code = c.main(['rescore', '--report', saved, '--rubric', str(c.DEFAULT_RUBRIC)], out=out)
+        report = json.loads(Path(saved).read_text(encoding='utf-8'))
+        self.assertEqual(code, 0 if report['decision']['action'] == 'recommend' else 1)
+        self.assertIn('model: jev-1.13.0', out.getvalue())
 
     def test_judge_without_a_key_exits_2_and_says_why(self):
         err = io.StringIO()

@@ -284,10 +284,11 @@ def build_report(brief, judged, rubric, judge_name, seed):
 
 def rescore(report, rubric):
     """New weights or thresholds over the SAME raw answers. No judge call. The new
-    rubric must keep the same question ids, or the stored answers would not apply."""
-    old = {q for q in build_questions(report['rubric'])}
-    if {q for q in build_questions(rubric)} != old:
-        raise ValueError('rescore needs the same dimension and veto ids as the original run')
+    rubric must ask exactly the same questions, or the stored answers would not apply:
+    reworded levels or instructions need a new judge run."""
+    if build_questions(rubric) != build_questions(report['rubric']):
+        raise ValueError('rescore needs the same questions (ids, instructions and levels) as the original '
+                         'run; only weights, thresholds and decision rules may change')
     scored = [score_row(row, rubric) for row in report['judged']]
     return {**report, 'rubric': rubric, 'scored': scored, 'decision': decide(scored, rubric)}
 
@@ -346,11 +347,17 @@ def main(argv=None, out=None):
     if args.command == 'rescore':
         report = rescore(json.loads(Path(args.report).read_text(encoding='utf-8')), load_rubric(args.rubric))
         print(render(report), file=out)
-        return 0
+        return 0 if report['decision']['action'] == 'recommend' else 1
 
     rubric = load_rubric(args.rubric)
     brief = Path(args.brief).read_text(encoding='utf-8').strip()
-    anonymised = anonymise(read_proposals(args.proposals), args.seed)
+    # A glob such as examples/x/*.md also matches the brief; it is never a proposal.
+    proposals = [p for p in args.proposals if Path(p).resolve() != Path(args.brief).resolve()]
+    if len(proposals) < len(args.proposals):
+        print(f'note: {args.brief} is the brief, so it was left out of the proposals', file=sys.stderr)
+    if not proposals:
+        parser.error('no proposals left once the brief is excluded')
+    anonymised = anonymise(read_proposals(proposals), args.seed)
     if args.command == 'show-request':
         for item in anonymised:
             print(f"# {item['label']}  <- {item['source']}", file=out)

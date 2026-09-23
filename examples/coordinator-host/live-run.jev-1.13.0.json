@@ -1,0 +1,577 @@
+{
+  "schema_version": 1,
+  "judge": "typesafe",
+  "seed": 0,
+  "brief_sha256": "0010df8ad94003e963e619967d75bbc0d6bb17ac95d4b8ec0ae2cb929804642b",
+  "rubric": {
+    "name": "system_design",
+    "note": "Weights and thresholds are starting points. Calibrate them by replaying past decisions whose outcome you know, then adjust with `rescore` (no new judge calls).",
+    "dimensions": [
+      {
+        "id": "constraint_fit",
+        "weight": 0.25,
+        "instructions": "How well does `proposal` meet the hard constraints listed in `decision_brief`? A constraint counts as addressed only if the proposal names it or states how the design meets it; complying silently does not count. Stating as fact something the brief says is unknown counts as contradicting that constraint.",
+        "levels": [
+          "Contradicts one or more of the listed constraints",
+          "Leaves at least one listed constraint unaddressed",
+          "Addresses every listed constraint, but for some only asserts that they are met",
+          "Addresses every listed constraint and states how each one is met"
+        ]
+      },
+      {
+        "id": "failure_handling",
+        "weight": 0.2,
+        "instructions": "How does `proposal` deal with things going wrong, such as crashes, partial writes, lost messages or bad input?",
+        "levels": [
+          "Does not mention failure at all",
+          "Mentions failure in general terms without saying what the system does",
+          "Names specific failure cases and what the system does in each",
+          "Names specific failure cases, what the system does in each, and how that behaviour would be tested"
+        ]
+      },
+      {
+        "id": "verifiability",
+        "weight": 0.2,
+        "instructions": "How checkable is `proposal`: could someone tell from a test or a measurement whether it worked?",
+        "levels": [
+          "States no way to check whether it worked",
+          "Says it should be tested but gives no concrete check",
+          "Gives at least one concrete check with an observable outcome",
+          "Gives concrete pass or fail criteria for its main claims, including at least one failure test"
+        ]
+      },
+      {
+        "id": "simplicity",
+        "weight": 0.15,
+        "instructions": "How much does `proposal` add that the decision in `decision_brief` does not need? A step that checks something `decision_brief` says is unknown or unverified counts as needed.",
+        "levels": [
+          "Adds several components, services or steps that the decision does not need",
+          "Adds one significant component, service or step that the decision does not need",
+          "Adds nothing significant beyond what the decision needs"
+        ]
+      },
+      {
+        "id": "reversibility",
+        "weight": 0.1,
+        "instructions": "How costly would it be to back out of `proposal` if it turns out to be wrong?",
+        "levels": [
+          "Commits to a choice that would require rewriting most of the system to undo",
+          "Undoing it would require significant rework in more than one component",
+          "Undoing it is confined to one component or one interface",
+          "Explicitly keeps the alternative open, for example behind an interface or a measured decision rule"
+        ]
+      },
+      {
+        "id": "evidence",
+        "weight": 0.1,
+        "instructions": "How well does `proposal` separate what is known from what is assumed?",
+        "levels": [
+          "Presents assumptions as established facts",
+          "Mixes verified facts and assumptions without saying which is which",
+          "Labels its main assumptions as assumptions",
+          "Labels assumptions, cites or measures the facts it relies on, and says what would change its conclusion"
+        ]
+      }
+    ],
+    "vetoes": [
+      {
+        "id": "violates_hard_constraint",
+        "threshold": 0.7,
+        "instructions": "Does `proposal` depend on something that `decision_brief` explicitly rules out or says is unavailable?",
+        "criteria": {
+          "true": "The proposal needs an action, tool, access or condition the brief explicitly forbids or says does not exist yet",
+          "false": "Nothing the proposal needs conflicts with an explicit prohibition or stated unavailability in the brief"
+        }
+      },
+      {
+        "id": "leaves_decision_unanswered",
+        "threshold": 0.7,
+        "instructions": "Does `proposal` leave the decision that `decision_brief` asks for unanswered?",
+        "criteria": {
+          "true": "It recommends something about a different decision, or makes no recommendation about this one",
+          "false": "It answers this decision, either by picking an option or by giving a rule that says which option to pick once named facts are checked"
+        }
+      }
+    ],
+    "decision": {
+      "min_confidence": 0.5,
+      "min_margin": 0.05
+    }
+  },
+  "judged": [
+    {
+      "label": "Proposal A",
+      "source": "measure-then-decide.md",
+      "answers": {
+        "constraint_fit": {
+          "type": "score",
+          "score": 1.74,
+          "confidence": 0.21,
+          "legend": {
+            "0": "Contradicts one or more of the listed constraints",
+            "1": "Leaves at least one listed constraint unaddressed",
+            "2": "Addresses every listed constraint, but for some only asserts that they are met",
+            "3": "Addresses every listed constraint and states how each one is met"
+          },
+          "probabilities": {
+            "0": 0.03,
+            "1": 0.52,
+            "2": 0.14,
+            "3": 0.31
+          }
+        },
+        "failure_handling": {
+          "type": "score",
+          "score": 2.95,
+          "confidence": 0.95,
+          "legend": {
+            "0": "Does not mention failure at all",
+            "1": "Mentions failure in general terms without saying what the system does",
+            "2": "Names specific failure cases and what the system does in each",
+            "3": "Names specific failure cases, what the system does in each, and how that behaviour would be tested"
+          },
+          "probabilities": {
+            "0": 0.0,
+            "1": 0.01,
+            "2": 0.04,
+            "3": 0.95
+          }
+        },
+        "verifiability": {
+          "type": "score",
+          "score": 2.99,
+          "confidence": 0.99,
+          "legend": {
+            "0": "States no way to check whether it worked",
+            "1": "Says it should be tested but gives no concrete check",
+            "2": "Gives at least one concrete check with an observable outcome",
+            "3": "Gives concrete pass or fail criteria for its main claims, including at least one failure test"
+          },
+          "probabilities": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 1.0
+          }
+        },
+        "simplicity": {
+          "type": "score",
+          "score": 1.63,
+          "confidence": 0.45,
+          "legend": {
+            "0": "Adds several components, services or steps that the decision does not need",
+            "1": "Adds one significant component, service or step that the decision does not need",
+            "2": "Adds nothing significant beyond what the decision needs"
+          },
+          "probabilities": {
+            "0": 0.09,
+            "1": 0.18,
+            "2": 0.73
+          }
+        },
+        "reversibility": {
+          "type": "score",
+          "score": 3.0,
+          "confidence": 1.0,
+          "legend": {
+            "0": "Commits to a choice that would require rewriting most of the system to undo",
+            "1": "Undoing it would require significant rework in more than one component",
+            "2": "Undoing it is confined to one component or one interface",
+            "3": "Explicitly keeps the alternative open, for example behind an interface or a measured decision rule"
+          },
+          "probabilities": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 1.0
+          }
+        },
+        "evidence": {
+          "type": "score",
+          "score": 2.95,
+          "confidence": 0.95,
+          "legend": {
+            "0": "Presents assumptions as established facts",
+            "1": "Mixes verified facts and assumptions without saying which is which",
+            "2": "Labels its main assumptions as assumptions",
+            "3": "Labels assumptions, cites or measures the facts it relies on, and says what would change its conclusion"
+          },
+          "probabilities": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.05,
+            "3": 0.95
+          }
+        },
+        "violates_hard_constraint": {
+          "type": "noul",
+          "noul": 0.14
+        },
+        "leaves_decision_unanswered": {
+          "type": "noul",
+          "noul": 0.21
+        }
+      },
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1551,
+        "output_tokens": 139
+      }
+    },
+    {
+      "label": "Proposal B",
+      "source": "wsl2.md",
+      "answers": {
+        "constraint_fit": {
+          "type": "score",
+          "score": 0.01,
+          "confidence": 0.99,
+          "legend": {
+            "0": "Contradicts one or more of the listed constraints",
+            "1": "Leaves at least one listed constraint unaddressed",
+            "2": "Addresses every listed constraint, but for some only asserts that they are met",
+            "3": "Addresses every listed constraint and states how each one is met"
+          },
+          "probabilities": {
+            "0": 1.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0
+          }
+        },
+        "failure_handling": {
+          "type": "score",
+          "score": 0.01,
+          "confidence": 0.99,
+          "legend": {
+            "0": "Does not mention failure at all",
+            "1": "Mentions failure in general terms without saying what the system does",
+            "2": "Names specific failure cases and what the system does in each",
+            "3": "Names specific failure cases, what the system does in each, and how that behaviour would be tested"
+          },
+          "probabilities": {
+            "0": 0.99,
+            "1": 0.01,
+            "2": 0.0,
+            "3": 0.0
+          }
+        },
+        "verifiability": {
+          "type": "score",
+          "score": 0.88,
+          "confidence": 0.12,
+          "legend": {
+            "0": "States no way to check whether it worked",
+            "1": "Says it should be tested but gives no concrete check",
+            "2": "Gives at least one concrete check with an observable outcome",
+            "3": "Gives concrete pass or fail criteria for its main claims, including at least one failure test"
+          },
+          "probabilities": {
+            "0": 0.46,
+            "1": 0.2,
+            "2": 0.33,
+            "3": 0.01
+          }
+        },
+        "simplicity": {
+          "type": "score",
+          "score": 0.06,
+          "confidence": 0.92,
+          "legend": {
+            "0": "Adds several components, services or steps that the decision does not need",
+            "1": "Adds one significant component, service or step that the decision does not need",
+            "2": "Adds nothing significant beyond what the decision needs"
+          },
+          "probabilities": {
+            "0": 0.95,
+            "1": 0.04,
+            "2": 0.01
+          }
+        },
+        "reversibility": {
+          "type": "score",
+          "score": 1.45,
+          "confidence": 0.44,
+          "legend": {
+            "0": "Commits to a choice that would require rewriting most of the system to undo",
+            "1": "Undoing it would require significant rework in more than one component",
+            "2": "Undoing it is confined to one component or one interface",
+            "3": "Explicitly keeps the alternative open, for example behind an interface or a measured decision rule"
+          },
+          "probabilities": {
+            "0": 0.05,
+            "1": 0.46,
+            "2": 0.48,
+            "3": 0.01
+          }
+        },
+        "evidence": {
+          "type": "score",
+          "score": 0.01,
+          "confidence": 0.99,
+          "legend": {
+            "0": "Presents assumptions as established facts",
+            "1": "Mixes verified facts and assumptions without saying which is which",
+            "2": "Labels its main assumptions as assumptions",
+            "3": "Labels assumptions, cites or measures the facts it relies on, and says what would change its conclusion"
+          },
+          "probabilities": {
+            "0": 0.99,
+            "1": 0.01,
+            "2": 0.0,
+            "3": 0.0
+          }
+        },
+        "violates_hard_constraint": {
+          "type": "noul",
+          "noul": 0.95
+        },
+        "leaves_decision_unanswered": {
+          "type": "noul",
+          "noul": 0.05
+        }
+      },
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1432,
+        "output_tokens": 139
+      }
+    },
+    {
+      "label": "Proposal C",
+      "source": "native-windows.md",
+      "answers": {
+        "constraint_fit": {
+          "type": "score",
+          "score": 2.02,
+          "confidence": 0.02,
+          "legend": {
+            "0": "Contradicts one or more of the listed constraints",
+            "1": "Leaves at least one listed constraint unaddressed",
+            "2": "Addresses every listed constraint, but for some only asserts that they are met",
+            "3": "Addresses every listed constraint and states how each one is met"
+          },
+          "probabilities": {
+            "0": 0.17,
+            "1": 0.11,
+            "2": 0.26,
+            "3": 0.45999999999999996
+          }
+        },
+        "failure_handling": {
+          "type": "score",
+          "score": 1.42,
+          "confidence": 0.46,
+          "legend": {
+            "0": "Does not mention failure at all",
+            "1": "Mentions failure in general terms without saying what the system does",
+            "2": "Names specific failure cases and what the system does in each",
+            "3": "Names specific failure cases, what the system does in each, and how that behaviour would be tested"
+          },
+          "probabilities": {
+            "0": 0.06,
+            "1": 0.62,
+            "2": 0.16,
+            "3": 0.16
+          }
+        },
+        "verifiability": {
+          "type": "score",
+          "score": 2.38,
+          "confidence": 0.57,
+          "legend": {
+            "0": "States no way to check whether it worked",
+            "1": "Says it should be tested but gives no concrete check",
+            "2": "Gives at least one concrete check with an observable outcome",
+            "3": "Gives concrete pass or fail criteria for its main claims, including at least one failure test"
+          },
+          "probabilities": {
+            "0": 0.0,
+            "1": 0.02,
+            "2": 0.58,
+            "3": 0.4
+          }
+        },
+        "simplicity": {
+          "type": "score",
+          "score": 1.67,
+          "confidence": 0.5,
+          "legend": {
+            "0": "Adds several components, services or steps that the decision does not need",
+            "1": "Adds one significant component, service or step that the decision does not need",
+            "2": "Adds nothing significant beyond what the decision needs"
+          },
+          "probabilities": {
+            "0": 0.01,
+            "1": 0.31,
+            "2": 0.68
+          }
+        },
+        "reversibility": {
+          "type": "score",
+          "score": 2.7,
+          "confidence": 0.7,
+          "legend": {
+            "0": "Commits to a choice that would require rewriting most of the system to undo",
+            "1": "Undoing it would require significant rework in more than one component",
+            "2": "Undoing it is confined to one component or one interface",
+            "3": "Explicitly keeps the alternative open, for example behind an interface or a measured decision rule"
+          },
+          "probabilities": {
+            "0": 0.0,
+            "1": 0.01,
+            "2": 0.27,
+            "3": 0.72
+          }
+        },
+        "evidence": {
+          "type": "score",
+          "score": 2.56,
+          "confidence": 0.56,
+          "legend": {
+            "0": "Presents assumptions as established facts",
+            "1": "Mixes verified facts and assumptions without saying which is which",
+            "2": "Labels its main assumptions as assumptions",
+            "3": "Labels assumptions, cites or measures the facts it relies on, and says what would change its conclusion"
+          },
+          "probabilities": {
+            "0": 0.0,
+            "1": 0.01,
+            "2": 0.42,
+            "3": 0.57
+          }
+        },
+        "violates_hard_constraint": {
+          "type": "noul",
+          "noul": 0.13
+        },
+        "leaves_decision_unanswered": {
+          "type": "noul",
+          "noul": 0.04
+        }
+      },
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1494,
+        "output_tokens": 139
+      }
+    }
+  ],
+  "scored": [
+    {
+      "label": "Proposal A",
+      "source": "measure-then-decide.md",
+      "total": 0.8616,
+      "dimensions": {
+        "constraint_fit": {
+          "normalised": 0.58,
+          "confidence": 0.21
+        },
+        "failure_handling": {
+          "normalised": 0.9833,
+          "confidence": 0.95
+        },
+        "verifiability": {
+          "normalised": 0.9967,
+          "confidence": 0.99
+        },
+        "simplicity": {
+          "normalised": 0.815,
+          "confidence": 0.45
+        },
+        "reversibility": {
+          "normalised": 1.0,
+          "confidence": 1.0
+        },
+        "evidence": {
+          "normalised": 0.9833,
+          "confidence": 0.95
+        }
+      },
+      "vetoes": [],
+      "min_confidence": 0.21
+    },
+    {
+      "label": "Proposal B",
+      "source": "wsl2.md",
+      "total": 0.1133,
+      "dimensions": {
+        "constraint_fit": {
+          "normalised": 0.0033,
+          "confidence": 0.99
+        },
+        "failure_handling": {
+          "normalised": 0.0033,
+          "confidence": 0.99
+        },
+        "verifiability": {
+          "normalised": 0.2933,
+          "confidence": 0.12
+        },
+        "simplicity": {
+          "normalised": 0.03,
+          "confidence": 0.92
+        },
+        "reversibility": {
+          "normalised": 0.4833,
+          "confidence": 0.44
+        },
+        "evidence": {
+          "normalised": 0.0033,
+          "confidence": 0.99
+        }
+      },
+      "vetoes": [
+        {
+          "id": "violates_hard_constraint",
+          "probability": 0.95,
+          "threshold": 0.7
+        }
+      ],
+      "min_confidence": 0.12
+    },
+    {
+      "label": "Proposal C",
+      "source": "native-windows.md",
+      "total": 0.7223,
+      "dimensions": {
+        "constraint_fit": {
+          "normalised": 0.6733,
+          "confidence": 0.02
+        },
+        "failure_handling": {
+          "normalised": 0.4733,
+          "confidence": 0.46
+        },
+        "verifiability": {
+          "normalised": 0.7933,
+          "confidence": 0.57
+        },
+        "simplicity": {
+          "normalised": 0.835,
+          "confidence": 0.5
+        },
+        "reversibility": {
+          "normalised": 0.9,
+          "confidence": 0.7
+        },
+        "evidence": {
+          "normalised": 0.8533,
+          "confidence": 0.56
+        }
+      },
+      "vetoes": [],
+      "min_confidence": 0.02
+    }
+  ],
+  "decision": {
+    "action": "escalate",
+    "recommendation": "Proposal A",
+    "recommended_source": "measure-then-decide.md",
+    "margin": 0.1393,
+    "reasons": [
+      "Proposal B vetoed by violates_hard_constraint (p=0.95 >= 0.7)",
+      "judge confidence on Proposal A drops to 0.21, below min_confidence 0.5"
+    ]
+  }
+}
