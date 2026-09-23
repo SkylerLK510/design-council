@@ -5,7 +5,8 @@ rank each other in prose, and a chairman LLM writes the verdict. Here:
 
   1. proposals come from anywhere (you, Claude, Codex, a local model) as text files
   2. they are anonymised and shuffled, then a judge scores each one against an
-     explicit rubric: typed Score questions per dimension, Noul questions for vetoes
+     explicit rubric: typed Score questions per dimension (a per_constraint dimension
+     asks one Noul per hard constraint in the brief instead), Noul questions for vetoes
   3. CODE is the chairman: weights, veto thresholds and a confidence gate decide
      between "recommend X" and "escalate to a human", and say why
 
@@ -23,6 +24,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import string
 import sys
 import time
@@ -30,7 +32,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: reports keep the brief's parsed hard constraints
 TYPESAFE_URL = 'https://api.typesafe.ai/v1/systemone'
 DEFAULT_MODEL = 'jev-latest'
 DEFAULT_RUBRIC = Path(__file__).parent / 'rubrics' / 'system_design.json'
@@ -56,18 +58,27 @@ def retry_delay_s(headers, attempt):
 # --- rubric -------------------------------------------------------------------------
 
 def load_rubric(path):
+    """A dimension is either a Score (`instructions` + `levels`) or `per_constraint`: one
+    Noul per hard constraint listed in the brief, combined in code."""
     rubric = json.loads(Path(path).read_text(encoding='utf-8'))
     dims, vetoes = rubric.get('dimensions') or [], rubric.get('vetoes') or []
     if not dims:
         raise ValueError('rubric needs at least one dimension')
     ids = [d.get('id') for d in dims] + [v.get('id') for v in vetoes]
-    if len(set(ids)) != len(ids) or not all(isinstance(i, str) and i for i in ids):
-        raise ValueError('dimension and veto ids must be unique non-empty strings')
+    if len(set(ids)) != len(ids) or not all(isinstance(i, str) and i and '.' not in i for i in ids):
+        raise ValueError('dimension and veto ids must be unique non-empty strings without dots')
     for d in dims:
-        if not 2 <= len(d.get('levels') or []) <= 10:
-            raise ValueError(f"{d['id']}: a Score takes 2 to 10 levels")
         if not isinstance(d.get('weight'), (int, float)) or d['weight'] <= 0:
             raise ValueError(f"{d['id']}: weight must be a positive number")
+        if 'per_constraint' in d:
+            if 'levels' in d:
+                raise ValueError(f"{d['id']}: use either levels or per_constraint, not both")
+            question = (d['per_constraint'] or {}).get('question')
+            if not isinstance(question, str) or '`constraint`' not in question:
+                raise ValueError(f"{d['id']}: per_constraint needs a question that refers to `constraint`")
+            continue
+        if not 2 <= len(d.get('levels') or []) <= 10:
+            raise ValueError(f"{d['id']}: a Score takes 2 to 10 levels")
         if not d.get('instructions'):
             raise ValueError(f"{d['id']}: instructions are required")
     for v in vetoes:
@@ -79,10 +90,68 @@ def load_rubric(path):
     return rubric
 
 
-def build_questions(rubric):
-    """Rubric -> the API's `questions` map. Ids are for code; the model never sees them."""
+HEADING = re.compile(r'^\s{0,3}(?:#{1,6}\s*)?[*_]{0,2}\s*hard\s+constraints?\s*(?:\([^)]*\))?\s*[*_]{0,2}\s*:?'
+                     r'\s*[*_]{0,2}\s*#*\s*$', re.IGNORECASE)
+BULLET = re.compile(r'^(\s*)(?:[-*+]|\d+[.)])\s+(.*\S)\s*$')
+THEMATIC_BREAK = re.compile(r'^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$')
+
+
+def parse_constraints(brief):
+    """The bullets under every `Hard constraints:` line or heading in the brief, in order,
+    read the way Markdown reads a list. Text between the heading and the first bullet is
+    skipped. A line straight under a bullet continues it, indented or not; a bullet
+    indented deeper than the list folds into the one above; blank lines between bullets
+    are fine. After a blank line an unindented line ends the list, and so does a heading
+    or a horizontal rule. No such section gives []."""
+    constraints, inside, indent, after_blank = [], False, None, False
+    for line in brief.splitlines():
+        if HEADING.match(line):
+            inside, indent, after_blank = True, None, False
+            continue
+        if not inside:
+            continue
+        if not line.strip():
+            after_blank = True
+            continue
+        bullet = None if THEMATIC_BREAK.match(line) else BULLET.match(line)
+        if indent is None:
+            if bullet:
+                indent = len(bullet.group(1))
+                constraints.append(bullet.group(2))
+            elif line.lstrip().startswith('#'):
+                inside = False
+        elif THEMATIC_BREAK.match(line) or line.lstrip().startswith('#'):
+            inside = False
+        elif bullet and len(bullet.group(1)) <= indent:
+            constraints.append(bullet.group(2))
+        elif bullet:
+            constraints[-1] += (' ' if constraints[-1].endswith(':') else '; ') + bullet.group(2)
+        elif line[:1].isspace() or not after_blank:
+            constraints[-1] += ' ' + line.strip()
+        else:
+            inside = False
+        after_blank = False
+    return [' '.join(c.split()) for c in constraints]
+
+
+def per_constraint_ids(d, constraints):
+    return [f"{d['id']}.{i}" for i in range(1, len(constraints) + 1)]
+
+
+def build_questions(rubric, constraints=()):
+    """Rubric -> the API's `questions` map. Ids are for code; the model never sees them.
+    A per_constraint dimension becomes one Noul per constraint, with the constraint
+    carried in structured instructions so the question can point at it by name."""
     questions = {}
     for d in rubric['dimensions']:
+        if 'per_constraint' in d:
+            spec = d['per_constraint']
+            for qid, text in zip(per_constraint_ids(d, constraints), constraints):
+                q = {'type': 'noul', 'instructions': {'constraint': text, 'question': spec['question']}}
+                if spec.get('criteria'):
+                    q['criteria'] = spec['criteria']
+                questions[qid] = q
+            continue
         questions[d['id']] = {'type': 'score', 'instructions': d['instructions'], 'criteria': list(d['levels'])}
     for v in rubric.get('vetoes', []):
         q = {'type': 'noul', 'instructions': v['instructions']}
@@ -96,7 +165,7 @@ def build_request(brief, proposal, rubric, model=DEFAULT_MODEL):
     """Exactly what is sent for one proposal. Every proposal gets the same questions
     over the same brief, independently, so scores are comparable across proposals."""
     return {'state': {'decision_brief': brief, 'proposal': proposal},
-            'model': model, 'questions': build_questions(rubric)}
+            'model': model, 'questions': build_questions(rubric, parse_constraints(brief))}
 
 
 # --- anonymisation ------------------------------------------------------------------
@@ -150,11 +219,20 @@ class TypeSafeJudge:
         return {'answers': answers, 'model': payload.get('model'), 'usage': payload.get('usage')}
 
 
+def describe(instructions):
+    """Structured instructions as one line of prose for a judge that takes a prompt."""
+    if isinstance(instructions, str):
+        return instructions
+    rest = '; '.join(f'`{k}` is {json.dumps(v)}' for k, v in instructions.items() if k != 'question')
+    return f"{instructions.get('question', '')} ({rest})"
+
+
 class OllamaJudge:
     """Offline stand-in so the pipeline runs with no key and nothing leaving the machine.
-    An LLM forced to a JSON schema picks one level per dimension: no probability
-    distribution, so confidence is None and the confidence gate reports 'unavailable'.
-    Use it to check plumbing and as a second opinion, not as a calibrated judge."""
+    An LLM forced to a JSON schema picks one level per Score and true or false per Noul:
+    no probability distribution, so every answer carries confidence None and the
+    confidence gate reports 'unavailable'. Use it to check plumbing and as a second
+    opinion, not as a calibrated judge."""
     name = 'ollama'
 
     def __init__(self, url='http://localhost:11434', model='qwen2.5:7b', timeout_s=300.0,
@@ -162,14 +240,16 @@ class OllamaJudge:
         self.url, self.model, self.timeout_s, self.opener = url.rstrip('/'), model, timeout_s, opener
 
     def judge(self, brief, proposal, rubric):
-        props, lines = {}, []
-        for d in rubric['dimensions']:
-            props[d['id']] = {'type': 'integer', 'minimum': 0, 'maximum': len(d['levels']) - 1}
-            levels = ' | '.join(f'{i}: {text}' for i, text in enumerate(d['levels']))
-            lines.append(f"{d['id']} (integer level): {d['instructions']} Levels -> {levels}")
-        for v in rubric.get('vetoes', []):
-            props[v['id']] = {'type': 'boolean'}
-            lines.append(f"{v['id']} (true/false): {v['instructions']}")
+        questions, props, lines = build_questions(rubric, parse_constraints(brief)), {}, []
+        for qid, q in questions.items():
+            if q['type'] == 'score':
+                props[qid] = {'type': 'integer', 'minimum': 0, 'maximum': len(q['criteria']) - 1}
+                levels = ' | '.join(f'{i}: {text}' for i, text in enumerate(q['criteria']))
+                lines.append(f"{qid} (integer level): {describe(q['instructions'])} Levels -> {levels}")
+            else:
+                props[qid] = {'type': 'boolean'}
+                rules = ''.join(f' {k} means: {v}' for k, v in (q.get('criteria') or {}).items())
+                lines.append(f"{qid} (true/false): {describe(q['instructions'])}{rules}")
         system = ('You are a strict evaluator of engineering design proposals. `decision_brief` and '
                   '`proposal` are given as JSON. Answer every item independently and literally. '
                   'Reply only with JSON.\n' + '\n'.join(lines))
@@ -189,14 +269,15 @@ class OllamaJudge:
         except (KeyError, TypeError, json.JSONDecodeError):
             raise JudgeError('Ollama reply was not the requested JSON') from None
         answers = {}
-        for d in rubric['dimensions']:
-            level = picked.get(d['id'])
-            if type(level) is not int or not 0 <= level < len(d['levels']):
-                raise JudgeError(f"Ollama gave no valid level for {d['id']}")
-            answers[d['id']] = {'type': 'score', 'score': float(level), 'confidence': None,
-                                'probabilities': {str(i): float(i == level) for i in range(len(d['levels']))}}
-        for v in rubric.get('vetoes', []):
-            answers[v['id']] = {'type': 'noul', 'noul': 1.0 if picked.get(v['id']) is True else 0.0}
+        for qid, q in questions.items():
+            if q['type'] == 'noul':
+                answers[qid] = {'type': 'noul', 'noul': 1.0 if picked.get(qid) is True else 0.0, 'confidence': None}
+                continue
+            level, top = picked.get(qid), len(q['criteria']) - 1
+            if type(level) is not int or not 0 <= level <= top:
+                raise JudgeError(f"Ollama gave no valid level for {qid}")
+            answers[qid] = {'type': 'score', 'score': float(level), 'confidence': None,
+                            'probabilities': {str(i): float(i == level) for i in range(top + 1)}}
         return {'answers': answers, 'model': f'ollama:{self.model}', 'usage': None}
 
 
@@ -214,23 +295,57 @@ def judge_all(brief, anonymised, rubric, judge):
     return rows
 
 
-def score_row(row, rubric):
+def noul_confidence(answer):
+    """|2p - 1|: the peak-based confidence TypeSafe's docs illustrate for a Choice, applied
+    to a Noul's two outcomes. 0 at p = 0.5, 1 at p = 0 or 1. None when the judge says it
+    cannot report uncertainty."""
+    if 'confidence' in answer and answer['confidence'] is None:
+        return None
+    return round(abs(2 * answer['noul'] - 1), 4)
+
+
+def score_per_constraint(d, answers, constraints, problems):
+    """Mean probability that the proposal addresses each constraint (an expected share,
+    so an unsure 0.5 counts half), with the least certain constraint as its confidence."""
+    found = []
+    for qid, text in zip(per_constraint_ids(d, constraints), constraints):
+        answer = answers.get(qid)
+        if not isinstance(answer, dict) or not isinstance(answer.get('noul'), (int, float)):
+            problems.append(f'no answer for {qid}')
+        else:
+            found.append({'constraint': text, 'probability': answer['noul'], 'confidence': noul_confidence(answer)})
+    if not constraints:
+        problems.append(f"{d['id']} needs the brief's hard constraints and there are none")
+    if len(found) < len(constraints) or not constraints:
+        return None
+    known = [c['confidence'] for c in found if c['confidence'] is not None]
+    return {'normalised': round(sum(c['probability'] for c in found) / len(found), 4),
+            'confidence': min(known) if known else None, 'constraints': found}
+
+
+def score_row(row, rubric, constraints=()):
     """One judged proposal -> normalised dimensions, weighted total, vetoes, confidence."""
     if row.get('error'):
         return {'label': row['label'], 'source': row['source'], 'error': row['error']}
     answers, total_weight = row['answers'], sum(d['weight'] for d in rubric['dimensions'])
     dims, total, confidences, problems = {}, 0.0, [], []
     for d in rubric['dimensions']:
-        answer = answers.get(d['id'])
-        if not isinstance(answer, dict) or not isinstance(answer.get('score'), (int, float)):
-            problems.append(f"no score for {d['id']}")
-            continue
-        top = len(d['levels']) - 1
-        normalised = min(max(answer['score'] / top, 0.0), 1.0)
-        dims[d['id']] = {'normalised': round(normalised, 4), 'confidence': answer.get('confidence')}
-        total += normalised * d['weight'] / total_weight
-        if isinstance(answer.get('confidence'), (int, float)):
-            confidences.append(answer['confidence'])
+        if 'per_constraint' in d:
+            dim = score_per_constraint(d, answers, constraints, problems)
+            if dim is None:
+                continue
+        else:
+            answer = answers.get(d['id'])
+            if not isinstance(answer, dict) or not isinstance(answer.get('score'), (int, float)):
+                problems.append(f"no score for {d['id']}")
+                continue
+            top = len(d['levels']) - 1
+            dim = {'normalised': round(min(max(answer['score'] / top, 0.0), 1.0), 4),
+                   'confidence': answer.get('confidence')}
+        dims[d['id']] = dim
+        total += dim['normalised'] * d['weight'] / total_weight
+        if isinstance(dim['confidence'], (int, float)):
+            confidences.append((dim['confidence'], d['id']))
     vetoes = []
     for v in rubric.get('vetoes', []):
         answer = answers.get(v['id'])
@@ -240,8 +355,9 @@ def score_row(row, rubric):
             vetoes.append({'id': v['id'], 'probability': answer['noul'], 'threshold': v['threshold']})
     if problems:
         return {'label': row['label'], 'source': row['source'], 'error': '; '.join(problems)}
+    lowest = min(confidences, key=lambda c: c[0]) if confidences else (None, None)
     return {'label': row['label'], 'source': row['source'], 'total': round(total, 4), 'dimensions': dims,
-            'vetoes': vetoes, 'min_confidence': min(confidences) if confidences else None}
+            'vetoes': vetoes, 'min_confidence': lowest[0], 'min_confidence_at': lowest[1]}
 
 
 def decide(scored, rubric):
@@ -269,16 +385,24 @@ def decide(scored, rubric):
     if winner['min_confidence'] is None:
         reasons.append('this judge reports no confidence, so the confidence gate was not applied')
     elif winner['min_confidence'] < rule['min_confidence']:
-        blockers.append(f"judge confidence on {winner['label']} drops to {winner['min_confidence']:.2f}, "
-                        f"below min_confidence {rule['min_confidence']}")
+        at, detail = winner.get('min_confidence_at'), ''
+        unclear = sorted((c for c in winner['dimensions'].get(at, {}).get('constraints', [])
+                          if c['confidence'] is not None and c['confidence'] < rule['min_confidence']),
+                         key=lambda c: c['confidence'])
+        if unclear:
+            detail = ': unclear whether it addresses ' + ', '.join(
+                f"\"{c['constraint']}\" (p={c['probability']:.2f})" for c in unclear)
+        blockers.append(f"judge confidence on {winner['label']} drops to {winner['min_confidence']:.2f}"
+                        f"{f' on {at}' if at else ''}{detail}, below min_confidence {rule['min_confidence']}")
     return {'action': 'escalate' if blockers else 'recommend', 'recommendation': winner['label'],
             'recommended_source': winner['source'], 'margin': margin, 'reasons': reasons + blockers}
 
 
 def build_report(brief, judged, rubric, judge_name, seed):
-    scored = [score_row(row, rubric) for row in judged]
+    constraints = parse_constraints(brief)
+    scored = [score_row(row, rubric, constraints) for row in judged]
     return {'schema_version': SCHEMA_VERSION, 'judge': judge_name, 'seed': seed,
-            'brief_sha256': hashlib.sha256(brief.encode()).hexdigest(),
+            'brief_sha256': hashlib.sha256(brief.encode()).hexdigest(), 'constraints': constraints,
             'rubric': rubric, 'judged': judged, 'scored': scored, 'decision': decide(scored, rubric)}
 
 
@@ -286,10 +410,11 @@ def rescore(report, rubric):
     """New weights or thresholds over the SAME raw answers. No judge call. The new
     rubric must ask exactly the same questions, or the stored answers would not apply:
     reworded levels or instructions need a new judge run."""
-    if build_questions(rubric) != build_questions(report['rubric']):
+    constraints = report.get('constraints', [])  # schema 1 reports predate per-constraint questions
+    if build_questions(rubric, constraints) != build_questions(report['rubric'], constraints):
         raise ValueError('rescore needs the same questions (ids, instructions and levels) as the original '
                          'run; only weights, thresholds and decision rules may change')
-    scored = [score_row(row, rubric) for row in report['judged']]
+    scored = [score_row(row, rubric, constraints) for row in report['judged']]
     return {**report, 'rubric': rubric, 'scored': scored, 'decision': decide(scored, rubric)}
 
 
@@ -311,6 +436,16 @@ def render(report):
         cells = ' '.join(f"{s['dimensions'][d]['normalised']:>13.2f}" for d in dims)
         flag = '  VETOED' if s['vetoes'] else ''
         lines.append(f"{s['label']:12}{s['total']:>7.3f} {cells}   {s['source']}{flag}")
+    judged = [s for s in sorted(report['scored'], key=lambda s: s.get('total', -1), reverse=True) if not s.get('error')]
+    for dim in report['rubric']['dimensions']:
+        if 'per_constraint' not in dim or not judged or dim['id'] not in judged[0]['dimensions']:
+            continue
+        lines += ['', f"{dim['id']}: probability that each proposal addresses the constraint"]
+        lines.append(f"{'':52}" + ''.join(f"{s['label'].split()[-1]:>6}" for s in judged))
+        for i, text in enumerate(report.get('constraints', [])):
+            short = text if len(text) <= 46 else text[:45] + '…'
+            cells = ''.join(f"{s['dimensions'][dim['id']]['constraints'][i]['probability']:>6.2f}" for s in judged)
+            lines.append(f'  {i + 1}. {short:<47}{cells}')
     d = report['decision']
     verdict = (f"RECOMMEND {d['recommendation']} ({d['recommended_source']})" if d['action'] == 'recommend'
                else f"ESCALATE TO A HUMAN" + (f" (leader: {d['recommendation']})" if d['recommendation'] else ''))
@@ -351,6 +486,12 @@ def main(argv=None, out=None):
 
     rubric = load_rubric(args.rubric)
     brief = Path(args.brief).read_text(encoding='utf-8').strip()
+    per_constraint = [d['id'] for d in rubric['dimensions'] if 'per_constraint' in d]
+    if per_constraint and not parse_constraints(brief):
+        parser.error(f"the rubric asks one question per hard constraint ({', '.join(per_constraint)}), but "
+                     f"{args.brief} has no 'Hard constraints:' list of bullets")
+    if per_constraint:
+        print(f'note: read {len(parse_constraints(brief))} hard constraints from {args.brief}', file=sys.stderr)
     # A glob such as examples/x/*.md also matches the brief; it is never a proposal.
     proposals = [p for p in args.proposals if Path(p).resolve() != Path(args.brief).resolve()]
     if len(proposals) < len(args.proposals):

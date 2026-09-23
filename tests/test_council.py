@@ -12,20 +12,42 @@ ROOT = Path(__file__).resolve().parent.parent
 EXAMPLE = ROOT / 'examples' / 'coordinator-host'
 
 
+BRIEF = """Decide where the thing runs.
+
+Hard constraints:
+- Nothing may depend on SSH.
+- Checkpoints must end up on permanent storage.
+"""
+
+
 def rubric():
     return c.load_rubric(c.DEFAULT_RUBRIC)
 
 
-def answers(levels, vetoes=None, confidence=0.9):
-    """levels: {dimension_id: score}; vetoes: {veto_id: probability}."""
+def score_rubric():
+    """The default rubric with per-constraint dimensions turned back into plain Scores,
+    so the chairman tests can drive every dimension with one number."""
+    r = rubric()
+    for d in r['dimensions']:
+        if d.pop('per_constraint', None) is not None:
+            d['instructions'] = f"How well does `proposal` do on {d['id']}?"
+            d['levels'] = ['poor', 'fair', 'good', 'excellent']
+    return r
+
+
+def answers(levels, vetoes=None, confidence=0.9, addressed=None):
+    """levels: {dimension_id: score}; vetoes: {veto_id: probability};
+    addressed: {question_id: probability} for per-constraint questions."""
     out = {k: {'type': 'score', 'score': v, 'confidence': confidence, 'probabilities': {}} for k, v in levels.items()}
     for v in rubric().get('vetoes', []):
         out[v['id']] = {'type': 'noul', 'noul': (vetoes or {}).get(v['id'], 0.02)}
+    for qid, p in (addressed or {}).items():
+        out[qid] = {'type': 'noul', 'noul': p}
     return out
 
 
 def flat(score, **kw):
-    return answers({d['id']: score for d in rubric()['dimensions']}, **kw)
+    return answers({d['id']: score for d in score_rubric()['dimensions']}, **kw)
 
 
 class ScriptedJudge:
@@ -56,8 +78,18 @@ def http_error(code, headers=None):
 
 class RubricTests(unittest.TestCase):
     def test_default_rubric_is_valid_and_matches_the_api_contract(self):
-        questions = c.build_questions(rubric())
+        questions = c.build_questions(rubric(), ['first constraint', 'second constraint'])
         for d in rubric()['dimensions']:
+            if 'per_constraint' in d:
+                for i, text in enumerate(['first constraint', 'second constraint'], 1):
+                    q = questions[f"{d['id']}.{i}"]
+                    self.assertEqual(q['type'], 'noul')
+                    self.assertEqual(q['instructions']['constraint'], text)
+                    self.assertIn('`proposal`', q['instructions']['question'])
+                    self.assertIn('`constraint`', q['instructions']['question'])
+                    self.assertEqual(set(q['criteria']), {'true', 'false'})
+                self.assertNotIn(d['id'], questions)
+                continue
             q = questions[d['id']]
             self.assertEqual(q['type'], 'score')
             self.assertIsInstance(q['criteria'], list)          # Score: ordered array of levels
@@ -80,11 +112,91 @@ class RubricTests(unittest.TestCase):
                        lambda r: r['dimensions'][0].update(levels=['only one']),
                        lambda r: r['dimensions'][0].update(weight=0),
                        lambda r: r['dimensions'][1].update(id=r['dimensions'][0]['id']),
-                       lambda r: r['vetoes'][0].update(threshold=0)):
+                       lambda r: r['vetoes'][0].update(threshold=0),
+                       lambda r: r['vetoes'][0].update(id='has.dot'),
+                       lambda r: r['dimensions'][0].update(per_constraint={'question': 'Is it good?'}),
+                       lambda r: r['dimensions'][0].update(levels=['a', 'b'])):
             broken = json.loads(json.dumps(good)); mutate(broken)
             with mock.patch.object(Path, 'read_text', return_value=json.dumps(broken)):
                 with self.assertRaises(ValueError):
                     c.load_rubric('x')
+
+
+class PerConstraintTests(unittest.TestCase):
+    def test_parses_the_example_brief(self):
+        found = c.parse_constraints((EXAMPLE / 'brief.md').read_text())
+        self.assertEqual(len(found), 7)
+        self.assertTrue(found[0].startswith('Remote access to the desktop is NOT configured'))
+        self.assertTrue(found[-1].startswith('Nothing may be assumed to behave on Windows'))
+
+    def test_heading_numbering_continuations_and_the_end_of_the_list(self):
+        brief = ('Intro.\n\n## Hard Constraints\n\n1. Stay under 2 GB of\n   memory at peak.\n\n'
+                 '2) No new services.\n* Ship by Friday.\n\nAfterwards we can talk.\n- not a constraint\n')
+        self.assertEqual(c.parse_constraints(brief),
+                         ['Stay under 2 GB of memory at peak.', 'No new services.', 'Ship by Friday.'])
+        self.assertEqual(c.parse_constraints('No list here.\n- a bullet in the wrong place'), [])
+
+    def test_lists_are_read_the_way_markdown_reads_them(self):
+        cases = {
+            # a wrapped line that is not indented still belongs to its bullet
+            'Hard constraints:\n- Nothing may depend on SSH or remote desktop\nexisting on the desktop.\n- Keep checkpoints.\n':
+                ['Nothing may depend on SSH or remote desktop existing on the desktop.', 'Keep checkpoints.'],
+            # nested bullets are part of the constraint above, not new constraints
+            'Hard constraints:\n- Storage:\n  - checkpoints on the desktop\n  - fsync before rename\n- No SSH.\n':
+                ['Storage: checkpoints on the desktop; fsync before rename', 'No SSH.'],
+            'Hard constraints:\r\n- a\r\n- b\r\n': ['a', 'b'],
+            'Hard constraints:\nThese are firm.\n- a\n': ['a'],
+            'Hard constraints\n----------------\n- a\n': ['a'],
+            'Hard constraints:\n- a\n- b\n\n* * *\n\n- c\n': ['a', 'b'],
+            'Hard constraints:\n- a\n- - -\n- c\n': ['a'],
+            'Hard constraints:\n- a\n## Next section\n- c\n': ['a'],
+            'Hard constraints:\n- a\n\nMore context.\n\nHard constraints:\n- b\n': ['a', 'b'],
+        }
+        for brief, expected in cases.items():
+            self.assertEqual(c.parse_constraints(brief), expected, brief)
+        for heading in ('**Hard constraints:**', '**Hard constraints**:', '### Hard Constraints ###',
+                        'Hard constraints (non-negotiable):', 'Hard constraint:', '   hard constraints'):
+            self.assertEqual(c.parse_constraints(f'{heading}\n- a\n- b\n'), ['a', 'b'], heading)
+        self.assertEqual(c.parse_constraints('Hard constraints make this tricky because of X.\n- a\n'), [])
+
+    def test_mean_probability_and_the_weakest_constraint_is_named(self):
+        rub = rubric()
+        a = answers({d['id']: 3 for d in rub['dimensions'] if 'levels' in d},
+                    addressed={'constraint_fit.1': 0.9, 'constraint_fit.2': 0.5})
+        b = answers({d['id']: 1 for d in rub['dimensions'] if 'levels' in d},
+                    addressed={'constraint_fit.1': 0.1, 'constraint_fit.2': 0.1})
+        items = c.anonymise([('a.md', 'a'), ('b.md', 'b')], seed=0)
+        report = c.build_report(BRIEF, c.judge_all(BRIEF, items, rub, ScriptedJudge({'a': a, 'b': b})), rub, 'scripted', 0)
+        self.assertEqual(report['constraints'], ['Nothing may depend on SSH.', 'Checkpoints must end up on permanent storage.'])
+        fit = next(s for s in report['scored'] if s['source'] == 'a.md')['dimensions']['constraint_fit']
+        self.assertEqual((fit['normalised'], fit['confidence']), (0.7, 0.0))
+        d = report['decision']
+        self.assertEqual((d['action'], d['recommended_source']), ('escalate', 'a.md'))
+        self.assertTrue(any('unclear whether it addresses "Checkpoints must end up on permanent storage." (p=0.50)' in r
+                            for r in d['reasons']), d['reasons'])
+        text = c.render(report)
+        self.assertIn('constraint_fit: probability that each proposal addresses the constraint', text)
+        self.assertIn('2. Checkpoints must end up on permanent storage.', text)
+        again = c.rescore(report, rub)
+        self.assertEqual(again['decision'], d)
+
+    def test_a_missing_constraint_answer_is_an_error(self):
+        rub = rubric()
+        partial = answers({d['id']: 3 for d in rub['dimensions'] if 'levels' in d}, addressed={'constraint_fit.1': 0.9})
+        row = {'label': 'Proposal A', 'source': 'a.md', 'answers': partial}
+        self.assertIn('no answer for constraint_fit.2', c.score_row(row, rub, c.parse_constraints(BRIEF))['error'])
+
+    def test_the_request_carries_each_constraint_in_structured_instructions(self):
+        questions = c.build_request(BRIEF, 'p', rubric())['questions']
+        self.assertEqual(questions['constraint_fit.1']['instructions']['constraint'], 'Nothing may depend on SSH.')
+        self.assertEqual(sorted(k for k in questions if k.startswith('constraint_fit')), ['constraint_fit.1', 'constraint_fit.2'])
+
+    def test_a_brief_without_constraints_cannot_start(self):
+        err = io.StringIO()
+        with mock.patch.object(c.sys, 'stderr', err), self.assertRaises(SystemExit) as caught:
+            c.main(['show-request', '--brief', str(ROOT / 'README.md'), '--proposals', str(EXAMPLE / 'wsl2.md')], out=io.StringIO())
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn("no 'Hard constraints:' list", err.getvalue())
 
 
 class AnonymiseTests(unittest.TestCase):
@@ -104,12 +216,12 @@ class AnonymiseTests(unittest.TestCase):
 
 class DecisionTests(unittest.TestCase):
     def run_council(self, by_text, rub=None):
-        rub = rub or rubric()
+        rub = rub or score_rubric()
         items = c.anonymise([(f'{k}.md', k) for k in by_text], seed=0)
         return c.build_report('brief', c.judge_all('brief', items, rub, ScriptedJudge(by_text)), rub, 'scripted', 0)
 
     def test_weighted_total_is_normalised_per_dimension(self):
-        top = {d['id']: len(d['levels']) - 1 for d in rubric()['dimensions']}
+        top = {d['id']: len(d['levels']) - 1 for d in score_rubric()['dimensions']}
         report = self.run_council({'best': answers(top), 'worst': flat(0)})
         totals = {s['source']: s['total'] for s in report['scored']}
         self.assertEqual(totals, {'best.md': 1.0, 'worst.md': 0.0})
@@ -152,7 +264,7 @@ class DecisionTests(unittest.TestCase):
         simple = flat(1); simple['simplicity']['score'] = 3
         report = self.run_council({'careful': careful, 'simple': simple})
         self.assertEqual(report['decision']['recommended_source'], 'careful.md')
-        reweighted = json.loads(json.dumps(rubric()))
+        reweighted = json.loads(json.dumps(score_rubric()))
         for d in reweighted['dimensions']:
             d['weight'] = 0.9 if d['id'] == 'simplicity' else 0.02
         with mock.patch.object(c.TypeSafeJudge, 'judge', side_effect=AssertionError('no judge call allowed')):
@@ -257,6 +369,25 @@ class OllamaJudgeTests(unittest.TestCase):
         self.assertEqual((out['evidence']['score'], out['evidence']['confidence']), (2.0, None))
         self.assertEqual((out['violates_hard_constraint']['noul'], out['leaves_decision_unanswered']['noul']), (1.0, 0.0))
 
+    def test_constraint_booleans_become_nouls_with_no_confidence(self):
+        picked = {d['id']: 2 for d in rubric()['dimensions']} | {v['id']: False for v in rubric()['vetoes']}
+        picked |= {'constraint_fit.1': True, 'constraint_fit.2': False}
+        out = c.OllamaJudge(opener=self.reply(picked)).judge(BRIEF, 'p', rubric())['answers']
+        self.assertEqual(out['constraint_fit.1'], {'type': 'noul', 'noul': 1.0, 'confidence': None})
+        sent = {}
+
+        def opener(request, timeout):
+            sent.update(json.loads(request.data))
+            return self.reply(picked)(request, timeout)
+
+        c.OllamaJudge(opener=opener).judge(BRIEF, 'p', rubric())
+        system = sent['messages'][0]['content']
+        self.assertIn('false means: The proposal is silent on this constraint', system)
+        self.assertIn('Nothing may depend on SSH.', system)
+        row = {'label': 'Proposal A', 'source': 'a.md', 'answers': out}
+        fit = c.score_row(row, rubric(), c.parse_constraints(BRIEF))['dimensions']['constraint_fit']
+        self.assertEqual((fit['normalised'], fit['confidence']), (0.5, None))
+
     def test_out_of_range_level_is_an_error(self):
         picked = {d['id']: 99 for d in rubric()['dimensions']}
         with self.assertRaises(c.JudgeError):
@@ -283,6 +414,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(out.getvalue().count('"state"'), 3)
         self.assertNotIn('<- brief.md', out.getvalue())
         self.assertIn('left out of the proposals', err.getvalue())
+        self.assertIn('read 7 hard constraints from', err.getvalue())
 
     def test_show_request_can_pin_a_model_version(self):
         out = io.StringIO()
@@ -293,7 +425,7 @@ class CliTests(unittest.TestCase):
         judged = [{'label': 'Proposal A', 'source': 'a.md', 'answers': flat(2), 'model': 'jev-1.13.0',
                    'usage': {'input_tokens': 900, 'output_tokens': 40}},
                   {'label': 'Proposal B', 'source': 'b.md', 'error': 'TypeSafe API returned HTTP 529'}]
-        head = c.render(c.build_report('brief', judged, rubric(), 'typesafe', 0)).splitlines()[0]
+        head = c.render(c.build_report('brief', judged, score_rubric(), 'typesafe', 0)).splitlines()[0]
         self.assertIn('model: jev-1.13.0', head)
         self.assertIn('input tokens: 900', head)
 

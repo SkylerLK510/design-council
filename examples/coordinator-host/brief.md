@@ -4,7 +4,9 @@ Context: a personal two-machine compute lab. The desktop (Ryzen 9800X3D, RTX 507
 
 Hard constraints:
 - Remote access to the desktop is NOT configured and must not be assumed. Nothing may depend on SSH or remote desktop existing.
-- The desktop's WSL status, CUDA setup and network link are unknown. No stack assumption may be treated as verified.
+- The desktop's WSL status is unknown; nothing may assume WSL is installed or working.
+- The desktop's CUDA setup is unknown; nothing may assume a working CUDA stack.
+- The desktop's network link is unknown; nothing may assume the LAN works until checked.
 - The Mac worker must be able to reach the coordinator over the LAN.
 - Checkpoint files must end up on the desktop's permanent storage.
-- So far everything has been developed and tested only on macOS.
+- Nothing may be assumed to behave on Windows or WSL2 as it does on macOS until it has been tested there.

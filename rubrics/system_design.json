@@ -5,13 +5,13 @@
     {
       "id": "constraint_fit",
       "weight": 0.25,
-      "instructions": "How well does `proposal` meet the hard constraints listed in `decision_brief`? A constraint counts as addressed only if the proposal names it or states how the design meets it; complying silently does not count. Stating as fact something the brief says is unknown counts as contradicting that constraint.",
-      "levels": [
-        "Contradicts one or more of the listed constraints",
-        "Leaves at least one listed constraint unaddressed",
-        "Addresses every listed constraint, but for some only asserts that they are met",
-        "Addresses every listed constraint and states how each one is met"
-      ]
+      "per_constraint": {
+        "question": "Does `proposal` say what in its chosen design or plan meets `constraint`?",
+        "criteria": {
+          "true": "The proposal commits to a design or plan, and a specific choice, mechanism or check in it deals with this constraint. It counts even when the constraint is not named, as long as the step plainly targets the constraint's subject.",
+          "false": "The proposal is silent on this constraint, even if nothing in the design seems to conflict with it. Not depending on something forbidden is not the same as dealing with it. Also false: the proposal only asserts that the constraint will be met ('it will work', 'everything will work the same way'), only discusses trade-offs without choosing a design, addresses a different system than the one the constraint names, or contradicts the constraint."
+        }
+      }
     },
     {
       "id": "failure_handling",

@@ -1,8 +1,17 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "judge": "typesafe",
   "seed": 0,
-  "brief_sha256": "0010df8ad94003e963e619967d75bbc0d6bb17ac95d4b8ec0ae2cb929804642b",
+  "brief_sha256": "04bc4ddde9788fb9fee328e28d35091e8d62fe7a5267ab37f392e6a1569ebf6a",
+  "constraints": [
+    "Remote access to the desktop is NOT configured and must not be assumed. Nothing may depend on SSH or remote desktop existing.",
+    "The desktop's WSL status is unknown; nothing may assume WSL is installed or working.",
+    "The desktop's CUDA setup is unknown; nothing may assume a working CUDA stack.",
+    "The desktop's network link is unknown; nothing may assume the LAN works until checked.",
+    "The Mac worker must be able to reach the coordinator over the LAN.",
+    "Checkpoint files must end up on the desktop's permanent storage.",
+    "Nothing may be assumed to behave on Windows or WSL2 as it does on macOS until it has been tested there."
+  ],
   "rubric": {
     "name": "system_design",
     "note": "Weights and thresholds are starting points. Calibrate them by replaying past decisions whose outcome you know, then adjust with `rescore` (no new judge calls).",
@@ -10,13 +19,13 @@
       {
         "id": "constraint_fit",
         "weight": 0.25,
-        "instructions": "How well does `proposal` meet the hard constraints listed in `decision_brief`? A constraint counts as addressed only if the proposal names it or states how the design meets it; complying silently does not count. Stating as fact something the brief says is unknown counts as contradicting that constraint.",
-        "levels": [
-          "Contradicts one or more of the listed constraints",
-          "Leaves at least one listed constraint unaddressed",
-          "Addresses every listed constraint, but for some only asserts that they are met",
-          "Addresses every listed constraint and states how each one is met"
-        ]
+        "per_constraint": {
+          "question": "Does `proposal` say what in its chosen design or plan meets `constraint`?",
+          "criteria": {
+            "true": "The proposal commits to a design or plan, and a specific choice, mechanism or check in it deals with this constraint. It counts even when the constraint is not named, as long as the step plainly targets the constraint's subject.",
+            "false": "The proposal is silent on this constraint, even if nothing in the design seems to conflict with it. Not depending on something forbidden is not the same as dealing with it. Also false: the proposal only asserts that the constraint will be met ('it will work', 'everything will work the same way'), only discusses trade-offs without choosing a design, addresses a different system than the one the constraint names, or contradicts the constraint."
+          }
+        }
       },
       {
         "id": "failure_handling",
@@ -103,27 +112,38 @@
       "label": "Proposal A",
       "source": "measure-then-decide.md",
       "answers": {
-        "constraint_fit": {
-          "type": "score",
-          "score": 1.74,
-          "confidence": 0.21,
-          "legend": {
-            "0": "Contradicts one or more of the listed constraints",
-            "1": "Leaves at least one listed constraint unaddressed",
-            "2": "Addresses every listed constraint, but for some only asserts that they are met",
-            "3": "Addresses every listed constraint and states how each one is met"
-          },
-          "probabilities": {
-            "0": 0.03,
-            "1": 0.52,
-            "2": 0.14,
-            "3": 0.31
-          }
+        "constraint_fit.1": {
+          "type": "noul",
+          "noul": 0.84
+        },
+        "constraint_fit.2": {
+          "type": "noul",
+          "noul": 0.81
+        },
+        "constraint_fit.3": {
+          "type": "noul",
+          "noul": 0.1
+        },
+        "constraint_fit.4": {
+          "type": "noul",
+          "noul": 0.93
+        },
+        "constraint_fit.5": {
+          "type": "noul",
+          "noul": 0.92
+        },
+        "constraint_fit.6": {
+          "type": "noul",
+          "noul": 0.53
+        },
+        "constraint_fit.7": {
+          "type": "noul",
+          "noul": 0.94
         },
         "failure_handling": {
           "type": "score",
-          "score": 2.95,
-          "confidence": 0.95,
+          "score": 2.96,
+          "confidence": 0.96,
           "legend": {
             "0": "Does not mention failure at all",
             "1": "Mentions failure in general terms without saying what the system does",
@@ -132,9 +152,9 @@
           },
           "probabilities": {
             "0": 0.0,
-            "1": 0.01,
-            "2": 0.04,
-            "3": 0.95
+            "1": 0.0,
+            "2": 0.03,
+            "3": 0.97
           }
         },
         "verifiability": {
@@ -150,23 +170,23 @@
           "probabilities": {
             "0": 0.0,
             "1": 0.0,
-            "2": 0.0,
-            "3": 1.0
+            "2": 0.01,
+            "3": 0.99
           }
         },
         "simplicity": {
           "type": "score",
-          "score": 1.63,
-          "confidence": 0.45,
+          "score": 1.61,
+          "confidence": 0.42,
           "legend": {
             "0": "Adds several components, services or steps that the decision does not need",
             "1": "Adds one significant component, service or step that the decision does not need",
             "2": "Adds nothing significant beyond what the decision needs"
           },
           "probabilities": {
-            "0": 0.09,
-            "1": 0.18,
-            "2": 0.73
+            "0": 0.1,
+            "1": 0.19,
+            "2": 0.71
           }
         },
         "reversibility": {
@@ -188,8 +208,8 @@
         },
         "evidence": {
           "type": "score",
-          "score": 2.95,
-          "confidence": 0.95,
+          "score": 2.94,
+          "confidence": 0.94,
           "legend": {
             "0": "Presents assumptions as established facts",
             "1": "Mixes verified facts and assumptions without saying which is which",
@@ -199,8 +219,8 @@
           "probabilities": {
             "0": 0.0,
             "1": 0.0,
-            "2": 0.05,
-            "3": 0.95
+            "2": 0.06,
+            "3": 0.94
           }
         },
         "violates_hard_constraint": {
@@ -209,35 +229,46 @@
         },
         "leaves_decision_unanswered": {
           "type": "noul",
-          "noul": 0.21
+          "noul": 0.22
         }
       },
       "model": "jev-1.13.0",
       "usage": {
-        "input_tokens": 1551,
-        "output_tokens": 139
+        "input_tokens": 2882,
+        "output_tokens": 258
       }
     },
     {
       "label": "Proposal B",
       "source": "wsl2.md",
       "answers": {
-        "constraint_fit": {
-          "type": "score",
-          "score": 0.01,
-          "confidence": 0.99,
-          "legend": {
-            "0": "Contradicts one or more of the listed constraints",
-            "1": "Leaves at least one listed constraint unaddressed",
-            "2": "Addresses every listed constraint, but for some only asserts that they are met",
-            "3": "Addresses every listed constraint and states how each one is met"
-          },
-          "probabilities": {
-            "0": 1.0,
-            "1": 0.0,
-            "2": 0.0,
-            "3": 0.0
-          }
+        "constraint_fit.1": {
+          "type": "noul",
+          "noul": 0.04
+        },
+        "constraint_fit.2": {
+          "type": "noul",
+          "noul": 0.04
+        },
+        "constraint_fit.3": {
+          "type": "noul",
+          "noul": 0.07
+        },
+        "constraint_fit.4": {
+          "type": "noul",
+          "noul": 0.07
+        },
+        "constraint_fit.5": {
+          "type": "noul",
+          "noul": 0.88
+        },
+        "constraint_fit.6": {
+          "type": "noul",
+          "noul": 0.37
+        },
+        "constraint_fit.7": {
+          "type": "noul",
+          "noul": 0.04
         },
         "failure_handling": {
           "type": "score",
@@ -258,8 +289,8 @@
         },
         "verifiability": {
           "type": "score",
-          "score": 0.88,
-          "confidence": 0.12,
+          "score": 0.89,
+          "confidence": 0.11,
           "legend": {
             "0": "States no way to check whether it worked",
             "1": "Says it should be tested but gives no concrete check",
@@ -267,31 +298,31 @@
             "3": "Gives concrete pass or fail criteria for its main claims, including at least one failure test"
           },
           "probabilities": {
-            "0": 0.46,
-            "1": 0.2,
-            "2": 0.33,
+            "0": 0.49,
+            "1": 0.13,
+            "2": 0.37,
             "3": 0.01
           }
         },
         "simplicity": {
           "type": "score",
-          "score": 0.06,
-          "confidence": 0.92,
+          "score": 0.03,
+          "confidence": 0.95,
           "legend": {
             "0": "Adds several components, services or steps that the decision does not need",
             "1": "Adds one significant component, service or step that the decision does not need",
             "2": "Adds nothing significant beyond what the decision needs"
           },
           "probabilities": {
-            "0": 0.95,
-            "1": 0.04,
+            "0": 0.97,
+            "1": 0.02,
             "2": 0.01
           }
         },
         "reversibility": {
           "type": "score",
-          "score": 1.45,
-          "confidence": 0.44,
+          "score": 1.16,
+          "confidence": 0.56,
           "legend": {
             "0": "Commits to a choice that would require rewriting most of the system to undo",
             "1": "Undoing it would require significant rework in more than one component",
@@ -299,10 +330,10 @@
             "3": "Explicitly keeps the alternative open, for example behind an interface or a measured decision rule"
           },
           "probabilities": {
-            "0": 0.05,
-            "1": 0.46,
-            "2": 0.48,
-            "3": 0.01
+            "0": 0.14,
+            "1": 0.57,
+            "2": 0.29,
+            "3": 0.0
           }
         },
         "evidence": {
@@ -324,7 +355,7 @@
         },
         "violates_hard_constraint": {
           "type": "noul",
-          "noul": 0.95
+          "noul": 0.98
         },
         "leaves_decision_unanswered": {
           "type": "noul",
@@ -333,35 +364,46 @@
       },
       "model": "jev-1.13.0",
       "usage": {
-        "input_tokens": 1432,
-        "output_tokens": 139
+        "input_tokens": 2763,
+        "output_tokens": 258
       }
     },
     {
       "label": "Proposal C",
       "source": "native-windows.md",
       "answers": {
-        "constraint_fit": {
-          "type": "score",
-          "score": 2.02,
-          "confidence": 0.02,
-          "legend": {
-            "0": "Contradicts one or more of the listed constraints",
-            "1": "Leaves at least one listed constraint unaddressed",
-            "2": "Addresses every listed constraint, but for some only asserts that they are met",
-            "3": "Addresses every listed constraint and states how each one is met"
-          },
-          "probabilities": {
-            "0": 0.17,
-            "1": 0.11,
-            "2": 0.26,
-            "3": 0.45999999999999996
-          }
+        "constraint_fit.1": {
+          "type": "noul",
+          "noul": 0.63
+        },
+        "constraint_fit.2": {
+          "type": "noul",
+          "noul": 0.89
+        },
+        "constraint_fit.3": {
+          "type": "noul",
+          "noul": 0.45
+        },
+        "constraint_fit.4": {
+          "type": "noul",
+          "noul": 0.1
+        },
+        "constraint_fit.5": {
+          "type": "noul",
+          "noul": 0.95
+        },
+        "constraint_fit.6": {
+          "type": "noul",
+          "noul": 0.94
+        },
+        "constraint_fit.7": {
+          "type": "noul",
+          "noul": 0.91
         },
         "failure_handling": {
           "type": "score",
-          "score": 1.42,
-          "confidence": 0.46,
+          "score": 1.53,
+          "confidence": 0.4,
           "legend": {
             "0": "Does not mention failure at all",
             "1": "Mentions failure in general terms without saying what the system does",
@@ -369,16 +411,16 @@
             "3": "Names specific failure cases, what the system does in each, and how that behaviour would be tested"
           },
           "probabilities": {
-            "0": 0.06,
-            "1": 0.62,
-            "2": 0.16,
-            "3": 0.16
+            "0": 0.04,
+            "1": 0.59,
+            "2": 0.18,
+            "3": 0.19
           }
         },
         "verifiability": {
           "type": "score",
-          "score": 2.38,
-          "confidence": 0.57,
+          "score": 2.31,
+          "confidence": 0.65,
           "legend": {
             "0": "States no way to check whether it worked",
             "1": "Says it should be tested but gives no concrete check",
@@ -388,14 +430,14 @@
           "probabilities": {
             "0": 0.0,
             "1": 0.02,
-            "2": 0.58,
-            "3": 0.4
+            "2": 0.65,
+            "3": 0.33
           }
         },
         "simplicity": {
           "type": "score",
-          "score": 1.67,
-          "confidence": 0.5,
+          "score": 1.64,
+          "confidence": 0.47,
           "legend": {
             "0": "Adds several components, services or steps that the decision does not need",
             "1": "Adds one significant component, service or step that the decision does not need",
@@ -403,14 +445,14 @@
           },
           "probabilities": {
             "0": 0.01,
-            "1": 0.31,
-            "2": 0.68
+            "1": 0.33,
+            "2": 0.66
           }
         },
         "reversibility": {
           "type": "score",
-          "score": 2.7,
-          "confidence": 0.7,
+          "score": 2.74,
+          "confidence": 0.74,
           "legend": {
             "0": "Commits to a choice that would require rewriting most of the system to undo",
             "1": "Undoing it would require significant rework in more than one component",
@@ -420,14 +462,14 @@
           "probabilities": {
             "0": 0.0,
             "1": 0.01,
-            "2": 0.27,
-            "3": 0.72
+            "2": 0.24,
+            "3": 0.75
           }
         },
         "evidence": {
           "type": "score",
-          "score": 2.56,
-          "confidence": 0.56,
+          "score": 2.52,
+          "confidence": 0.52,
           "legend": {
             "0": "Presents assumptions as established facts",
             "1": "Mixes verified facts and assumptions without saying which is which",
@@ -437,23 +479,23 @@
           "probabilities": {
             "0": 0.0,
             "1": 0.01,
-            "2": 0.42,
-            "3": 0.57
+            "2": 0.46,
+            "3": 0.53
           }
         },
         "violates_hard_constraint": {
           "type": "noul",
-          "noul": 0.13
+          "noul": 0.16
         },
         "leaves_decision_unanswered": {
           "type": "noul",
-          "noul": 0.04
+          "noul": 0.03
         }
       },
       "model": "jev-1.13.0",
       "usage": {
-        "input_tokens": 1494,
-        "output_tokens": 139
+        "input_tokens": 2825,
+        "output_tokens": 258
       }
     }
   ],
@@ -461,60 +503,135 @@
     {
       "label": "Proposal A",
       "source": "measure-then-decide.md",
-      "total": 0.8616,
+      "total": 0.8965,
       "dimensions": {
         "constraint_fit": {
-          "normalised": 0.58,
-          "confidence": 0.21
+          "normalised": 0.7243,
+          "confidence": 0.06,
+          "constraints": [
+            {
+              "constraint": "Remote access to the desktop is NOT configured and must not be assumed. Nothing may depend on SSH or remote desktop existing.",
+              "probability": 0.84,
+              "confidence": 0.68
+            },
+            {
+              "constraint": "The desktop's WSL status is unknown; nothing may assume WSL is installed or working.",
+              "probability": 0.81,
+              "confidence": 0.62
+            },
+            {
+              "constraint": "The desktop's CUDA setup is unknown; nothing may assume a working CUDA stack.",
+              "probability": 0.1,
+              "confidence": 0.8
+            },
+            {
+              "constraint": "The desktop's network link is unknown; nothing may assume the LAN works until checked.",
+              "probability": 0.93,
+              "confidence": 0.86
+            },
+            {
+              "constraint": "The Mac worker must be able to reach the coordinator over the LAN.",
+              "probability": 0.92,
+              "confidence": 0.84
+            },
+            {
+              "constraint": "Checkpoint files must end up on the desktop's permanent storage.",
+              "probability": 0.53,
+              "confidence": 0.06
+            },
+            {
+              "constraint": "Nothing may be assumed to behave on Windows or WSL2 as it does on macOS until it has been tested there.",
+              "probability": 0.94,
+              "confidence": 0.88
+            }
+          ]
         },
         "failure_handling": {
-          "normalised": 0.9833,
-          "confidence": 0.95
+          "normalised": 0.9867,
+          "confidence": 0.96
         },
         "verifiability": {
           "normalised": 0.9967,
           "confidence": 0.99
         },
         "simplicity": {
-          "normalised": 0.815,
-          "confidence": 0.45
+          "normalised": 0.805,
+          "confidence": 0.42
         },
         "reversibility": {
           "normalised": 1.0,
           "confidence": 1.0
         },
         "evidence": {
-          "normalised": 0.9833,
-          "confidence": 0.95
+          "normalised": 0.98,
+          "confidence": 0.94
         }
       },
       "vetoes": [],
-      "min_confidence": 0.21
+      "min_confidence": 0.06,
+      "min_confidence_at": "constraint_fit"
     },
     {
       "label": "Proposal B",
       "source": "wsl2.md",
-      "total": 0.1133,
+      "total": 0.1552,
       "dimensions": {
         "constraint_fit": {
-          "normalised": 0.0033,
-          "confidence": 0.99
+          "normalised": 0.2157,
+          "confidence": 0.26,
+          "constraints": [
+            {
+              "constraint": "Remote access to the desktop is NOT configured and must not be assumed. Nothing may depend on SSH or remote desktop existing.",
+              "probability": 0.04,
+              "confidence": 0.92
+            },
+            {
+              "constraint": "The desktop's WSL status is unknown; nothing may assume WSL is installed or working.",
+              "probability": 0.04,
+              "confidence": 0.92
+            },
+            {
+              "constraint": "The desktop's CUDA setup is unknown; nothing may assume a working CUDA stack.",
+              "probability": 0.07,
+              "confidence": 0.86
+            },
+            {
+              "constraint": "The desktop's network link is unknown; nothing may assume the LAN works until checked.",
+              "probability": 0.07,
+              "confidence": 0.86
+            },
+            {
+              "constraint": "The Mac worker must be able to reach the coordinator over the LAN.",
+              "probability": 0.88,
+              "confidence": 0.76
+            },
+            {
+              "constraint": "Checkpoint files must end up on the desktop's permanent storage.",
+              "probability": 0.37,
+              "confidence": 0.26
+            },
+            {
+              "constraint": "Nothing may be assumed to behave on Windows or WSL2 as it does on macOS until it has been tested there.",
+              "probability": 0.04,
+              "confidence": 0.92
+            }
+          ]
         },
         "failure_handling": {
           "normalised": 0.0033,
           "confidence": 0.99
         },
         "verifiability": {
-          "normalised": 0.2933,
-          "confidence": 0.12
+          "normalised": 0.2967,
+          "confidence": 0.11
         },
         "simplicity": {
-          "normalised": 0.03,
-          "confidence": 0.92
+          "normalised": 0.015,
+          "confidence": 0.95
         },
         "reversibility": {
-          "normalised": 0.4833,
-          "confidence": 0.44
+          "normalised": 0.3867,
+          "confidence": 0.56
         },
         "evidence": {
           "normalised": 0.0033,
@@ -524,54 +641,93 @@
       "vetoes": [
         {
           "id": "violates_hard_constraint",
-          "probability": 0.95,
+          "probability": 0.98,
           "threshold": 0.7
         }
       ],
-      "min_confidence": 0.12
+      "min_confidence": 0.11,
+      "min_confidence_at": "verifiability"
     },
     {
       "label": "Proposal C",
       "source": "native-windows.md",
-      "total": 0.7223,
+      "total": 0.7283,
       "dimensions": {
         "constraint_fit": {
-          "normalised": 0.6733,
-          "confidence": 0.02
+          "normalised": 0.6957,
+          "confidence": 0.1,
+          "constraints": [
+            {
+              "constraint": "Remote access to the desktop is NOT configured and must not be assumed. Nothing may depend on SSH or remote desktop existing.",
+              "probability": 0.63,
+              "confidence": 0.26
+            },
+            {
+              "constraint": "The desktop's WSL status is unknown; nothing may assume WSL is installed or working.",
+              "probability": 0.89,
+              "confidence": 0.78
+            },
+            {
+              "constraint": "The desktop's CUDA setup is unknown; nothing may assume a working CUDA stack.",
+              "probability": 0.45,
+              "confidence": 0.1
+            },
+            {
+              "constraint": "The desktop's network link is unknown; nothing may assume the LAN works until checked.",
+              "probability": 0.1,
+              "confidence": 0.8
+            },
+            {
+              "constraint": "The Mac worker must be able to reach the coordinator over the LAN.",
+              "probability": 0.95,
+              "confidence": 0.9
+            },
+            {
+              "constraint": "Checkpoint files must end up on the desktop's permanent storage.",
+              "probability": 0.94,
+              "confidence": 0.88
+            },
+            {
+              "constraint": "Nothing may be assumed to behave on Windows or WSL2 as it does on macOS until it has been tested there.",
+              "probability": 0.91,
+              "confidence": 0.82
+            }
+          ]
         },
         "failure_handling": {
-          "normalised": 0.4733,
-          "confidence": 0.46
+          "normalised": 0.51,
+          "confidence": 0.4
         },
         "verifiability": {
-          "normalised": 0.7933,
-          "confidence": 0.57
+          "normalised": 0.77,
+          "confidence": 0.65
         },
         "simplicity": {
-          "normalised": 0.835,
-          "confidence": 0.5
+          "normalised": 0.82,
+          "confidence": 0.47
         },
         "reversibility": {
-          "normalised": 0.9,
-          "confidence": 0.7
+          "normalised": 0.9133,
+          "confidence": 0.74
         },
         "evidence": {
-          "normalised": 0.8533,
-          "confidence": 0.56
+          "normalised": 0.84,
+          "confidence": 0.52
         }
       },
       "vetoes": [],
-      "min_confidence": 0.02
+      "min_confidence": 0.1,
+      "min_confidence_at": "constraint_fit"
     }
   ],
   "decision": {
     "action": "escalate",
     "recommendation": "Proposal A",
     "recommended_source": "measure-then-decide.md",
-    "margin": 0.1393,
+    "margin": 0.1682,
     "reasons": [
-      "Proposal B vetoed by violates_hard_constraint (p=0.95 >= 0.7)",
-      "judge confidence on Proposal A drops to 0.21, below min_confidence 0.5"
+      "Proposal B vetoed by violates_hard_constraint (p=0.98 >= 0.7)",
+      "judge confidence on Proposal A drops to 0.06 on constraint_fit: unclear whether it addresses \"Checkpoint files must end up on the desktop's permanent storage.\" (p=0.53), below min_confidence 0.5"
     ]
   }
 }
